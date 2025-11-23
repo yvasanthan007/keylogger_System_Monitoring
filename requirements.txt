@@ -1,0 +1,6 @@
+Flask
+pynput
+cryptography
+pyautogui
+psutil
+pillow 

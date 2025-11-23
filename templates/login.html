@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Access Control — Authenticate</title>
+
+  
+  <style>
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    
+    body {
+      background: #000;
+      color: #33ff77;
+      font-family: "Courier New", Courier, monospace;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas#matrix {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      filter: blur(0.3px);
+    }
+
+    
+    .terminal {
+      position: relative;
+      z-index: 2;
+      width: 720px;
+      max-width: 92vw;
+      background: linear-gradient(180deg, rgba(0,0,0,0.75), rgba(0,0,0,0.6));
+      border: 1px solid rgba(51,255,119,0.08);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6), 0 0 40px rgba(51,255,119,0.02) inset;
+      border-radius: 10px;
+      padding: 26px;
+      backdrop-filter: blur(4px);
+    }
+
+    .term-header {
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom: 18px;
+    }
+
+    .dots { display:flex; gap:6px; }
+    .dot { width:12px; height:12px; border-radius:50%; background:#2e2e2e; box-shadow:0 0 10px rgba(0,0,0,0.5) }
+    .dot.red { background:#ff5f56; box-shadow:0 0 8px rgba(255,95,86,0.25) }
+    .dot.yellow { background:#ffbd2e; box-shadow:0 0 8px rgba(255,189,46,0.12) }
+    .dot.green { background:#27c93f; box-shadow:0 0 8px rgba(39,201,63,0.18) }
+
+    .term-title {
+      margin-left: auto;
+      color:#9affc8;
+      font-size: 0.95rem;
+      letter-spacing: 0.6px;
+    }
+
+    h1 {
+      color: #33ff77;
+      font-size: 1.2rem;
+      margin-bottom: 6px;
+      text-shadow: 0 0 10px rgba(51,255,119,0.12);
+    }
+
+    p.sub {
+      color: #8fd7a6;
+      font-size: 0.82rem;
+      margin-bottom: 18px;
+      opacity: 0.9;
+    }
+
+    
+    .console {
+      background: rgba(0,0,0,0.5);
+      border-radius: 8px;
+      padding: 18px;
+      border: 1px solid rgba(51,255,119,0.06);
+    }
+
+    label.terminal-line {
+      display:block;
+      margin-bottom: 14px;
+      color: #a6f7c9;
+      font-size: 0.92rem;
+    }
+
+    .input {
+      width: 100%;
+      background: rgba(0,0,0,0.75);
+      border: 1px solid rgba(51,255,119,0.08);
+      color: #bfffd8;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      border-radius: 6px;
+      outline: none;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+    }
+    .input:focus {
+      box-shadow: 0 0 18px rgba(51,255,119,0.14);
+      border-color: rgba(51,255,119,0.18);
+    }
+
+    .row {
+      display:flex;
+      gap:10px;
+      align-items:center;
+    }
+
+    .btn {
+      background: linear-gradient(180deg, #19b57e, #0f8a57);
+      color: #04130b;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(11,70,44,0.25);
+    }
+    .btn:hover { 
+      transform: translateY(-2px); 
+      box-shadow: 0 12px 24px rgba(11,70,44,0.35);
+    }
+
+    .consent {
+      display:flex;
+      gap:10px;
+      align-items:center;
+      margin-top:10px;
+      font-size:0.85rem;
+      color:#98f0c6;
+    }
+
+    .consent input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #33ff77;
+    }
+
+    .error {
+      color: #ff6b6b;
+      font-size: 0.85rem;
+      margin-top: 10px;
+      padding: 8px;
+      background: rgba(255, 107, 107, 0.1);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 4px;
+    }
+
+    
+    .typing {
+      display:inline-block;
+      color:#98f0c6;
+      opacity:0.95;
+      font-weight:600;
+      font-size:0.92rem;
+      letter-spacing:0.6px;
+    }
+    .caret {
+      display:inline-block;
+      width:10px;
+      height:18px;
+      background:#33ff77;
+      margin-left:6px;
+      animation: blink 1s steps(2, start) infinite;
+      vertical-align:bottom;
+    }
+    @keyframes blink { 50% { opacity:0 } }
+
+    
+    @media (max-width:520px){
+      .terminal { padding:18px; }
+      h1 { font-size:1.05rem; }
+      .input { font-size: 0.9rem; }
+      .row { flex-direction: column; gap: 8px; }
+      .consent { font-size: 0.8rem; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+
+  <div class="terminal" role="main" aria-labelledby="main-title">
+    <div class="term-header">
+      <div class="dots">
+        <div class="dot red"></div>
+        <div class="dot yellow"></div>
+        <div class="dot green"></div>
+      </div>
+      <div class="term-title">MATRIX ADMIN • KEYLOGGER DASHBOARD</div>
+    </div>
+
+    <h1 id="main-title">SECURE SHELL LOGIN</h1>
+    <p class="sub">Authorized personnel only — provide credentials and confirm local consent.</p>
+
+    <div class="console" aria-live="polite">
+      <form method="post" action="/login" autocomplete="on">
+        <label class="terminal-line">
+          Username
+          <input class="input" name="username" type="text" autocomplete="username" required
+                 placeholder="admin" value="{{ request.form.username if request.form else '' }}">
+        </label>
+
+        <label class="terminal-line">
+          Password
+          <input class="input" name="password" type="password" autocomplete="current-password" required
+                 placeholder="••••••••">
+        </label>
+
+        <div class="row">
+          <button class="btn" type="submit">ENTER</button>
+
+          <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+            <span class="typing" id="typingText">I confirm lawful/consensual use</span>
+            <span class="caret" aria-hidden="true"></span>
+          </div>
+        </div>
+
+        <div class="consent">
+          <input type="checkbox" id="consent" name="consent" required>
+          <label for="consent">I consent to run monitoring on this device (required)</label>
+        </div>
+
+        {% if error %}
+        <div class="error">
+          <span style="color:#ff6b6b">✗ ACCESS DENIED</span>
+          <br><span style="opacity:0.8">Invalid credentials. Try: admin / 1234</span>
+        </div>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+  
+  <script>
+    
+    const canvas = document.getElementById('matrix');
+    const ctx = canvas.getContext('2d');
+    let w, h, cols, ypos;
+
+    function fitCanvas(){
+      canvas.width = w = window.innerWidth;
+      canvas.height = h = window.innerHeight;
+      cols = Math.floor(w / 14);
+      ypos = new Array(cols).fill(0);
+    }
+    window.addEventListener('resize', fitCanvas);
+    fitCanvas();
+
+    const letters = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズヅブプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポ0123456789@#&()[]{}<>/\\|~^%$£¥*-=+;:,.?';
+    function draw(){
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = '#0f0';
+      ctx.font = '14px monospace';
+
+      for (let i = 0; i < ypos.length; i++) {
+        const text = letters.charAt(Math.floor(Math.random() * letters.length));
+        const x = i * 14;
+        ctx.fillStyle = (Math.random() > 0.98) ? '#bfffd8' : '#33ff77';
+        ctx.fillText(text, x, ypos[i] * 14);
+
+        if (ypos[i] * 14 > h && Math.random() > 0.975) ypos[i] = 0;
+        ypos[i]++;
+      }
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    
+    const typingEl = document.getElementById('typingText');
+    const phrase = "I confirm lawful/consensual use";
+    let idx=0, forward=true;
+    setInterval(() => {
+      if(forward){
+        idx++;
+        if(idx>phrase.length) { forward=false; setTimeout(()=>{},400); }
+      } else {
+        idx--;
+        if(idx<0) forward=true;
+      }
+      typingEl.textContent = phrase.slice(0, idx);
+    }, 80);
+
+    
+    document.querySelector('input[name="username"]').focus();
+  </script>
+</body>
+</html>
